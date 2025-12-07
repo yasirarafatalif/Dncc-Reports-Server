@@ -37,6 +37,7 @@ async function run() {
     app.post('/users', async (req, res) => {
       const user = req.body
       user.role = 'citizen'
+      user.status = 'unblock'
       const email = user.email
       const userExits = await userCollection.findOne({ email })
       if (userExits) {
@@ -75,7 +76,7 @@ async function run() {
     // all issue api
     app.get('/all-issue', async (req, res) => {
       const result = await issueCollection.find().toArray();
-     res.send(result)
+      res.send(result)
     });
 
     // user all user find
@@ -115,6 +116,36 @@ async function run() {
         result,
       });
 
+    })
+
+
+
+
+
+
+    // citizen user api
+    app.get('/user/cityzen', async(req,res)=>{
+      const {role}= req.query
+      const query = {role}
+      if(role ==='citizen'){
+         const result = await userCollection.find(query).toArray()
+      res.send(result)
+      }  
+    })
+
+    // citizen status update api
+    app.patch('/user/:id', async(req,res)=>{
+      const id = req.params.id;
+      const { status}= req.body
+      const query= {_id: new ObjectId(id)}
+      const updateData={
+        $set:{
+          status:  status
+
+        }
+      }
+      const result = await userCollection.updateOne(query, updateData)
+      res.send(result)
     })
 
 
