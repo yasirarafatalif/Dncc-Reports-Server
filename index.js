@@ -10,7 +10,7 @@ app.use(cors())
 
 
 //mongobd here
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 // const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.zgnatwl.mongodb.net/?appName=Cluster0`;
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.zgnatwl.mongodb.net/?appName=Cluster0`;
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -30,12 +30,13 @@ async function run() {
     // here you type code 
     const db = client.db("Dncc_Reports")
     const userCollection = db.collection('Dncc_User');
+    const issueCollection = db.collection('Dncc_All_Issuse');
 
 
-     // user related api
+    // user related api
     app.post('/users', async (req, res) => {
       const user = req.body
-      user.role = 'user'
+      user.role = 'citizen'
       const email = user.email
       const userExits = await userCollection.findOne({ email })
       if (userExits) {
@@ -50,6 +51,64 @@ async function run() {
     app.get('/users', async (req, res) => {
       const result = await userCollection.find().toArray()
       res.send(result)
+    })
+
+    // issue api here
+
+    app.post('/issue', async (req, res) => {
+      const userIssue = req.body
+      userIssue.priority = 'normal'
+      userIssue.status = 'pending'
+      const result = await issueCollection.insertOne(userIssue)
+      res.send(result)
+    })
+
+    // issue find api
+    app.get('/issue/:id', async (req, res) => {
+      const id = req.params.id;
+      console.log(id);
+      const query = { _id: new ObjectId(id) }
+      const result = await issueCollection.findOne(query)
+      res.send(result)
+    })
+
+    // user all user find
+    app.get('/user/issue', async (req, res) => {
+      const { email } = req.query;
+      const query = { email }
+      const result = await issueCollection.find(query).toArray()
+      res.send(result)
+    })
+
+    // user delete find
+    app.delete('/user/issue/:id', async (req, res) => {
+      const id = req.params.id;
+      const userEmail = req.query.email;
+      const query = { _id: new ObjectId(id) };
+
+      if (!userEmail) {
+        return res.status(400).send({ success: false, message: "Email is required" });
+      }
+      const issue = await issueCollection.findOne(query);
+      if (!issue) {
+        return res.status(404).send({ success: false, message: "Issue not found" });
+      }
+
+      if (issue.email !== userEmail) {
+        return res.status(403).send({
+          success: false,
+          message: "Unauthorized! You cannot delete this issue.",
+        });
+      }
+
+      const result = await issueCollection.deleteOne(query);
+
+      res.send({
+        success: true,
+        message: "Issue deleted successfully",
+        result,
+      });
+
     })
 
 
