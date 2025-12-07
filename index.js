@@ -66,11 +66,17 @@ async function run() {
     // issue find api
     app.get('/issue/:id', async (req, res) => {
       const id = req.params.id;
-      console.log(id);
       const query = { _id: new ObjectId(id) }
       const result = await issueCollection.findOne(query)
       res.send(result)
     })
+
+
+    // all issue api
+    app.get('/all-issue', async (req, res) => {
+      const result = await issueCollection.find().toArray();
+     res.send(result)
+    });
 
     // user all user find
     app.get('/user/issue', async (req, res) => {
