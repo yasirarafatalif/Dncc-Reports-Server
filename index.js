@@ -67,9 +67,8 @@ async function run() {
           staffName: fullName,
           nidNumber: nid,
           staffPhoneNUmber:phone,
-          staffStauts:"pending",
+          staffStatus:"pending",
           staffAbout:about,
-          role: role
         }
       }
       const result= await userCollection.updateOne(query,updatedata)
@@ -147,19 +146,29 @@ async function run() {
 
 
     // citizen user api
+    //admin show can pending staff api
     app.get('/user/cityzen', async(req,res)=>{
-      const {role}= req.query
-      const query = {role}
+      const {role,staffStatus}= req.query
+      const query = {}
+      if(role){
+        query.role= role
+      }
       if(role ==='citizen'){
          const result = await userCollection.find(query).toArray()
       res.send(result)
       }  
+      if(staffStatus){
+        query.staffStatus = {$in:['pending','approved']}
+      }
+      const result = await userCollection.find(query).toArray()
+      res.send(result)
+
     })
 
     // citizen status update api
     app.patch('/user/:id', async(req,res)=>{
       const id = req.params.id;
-      const { status}= req.body
+      const { status}= req.body;
       const query= {_id: new ObjectId(id)}
       const updateData={
         $set:{
@@ -170,6 +179,25 @@ async function run() {
       const result = await userCollection.updateOne(query, updateData)
       res.send(result)
     })
+
+
+    //
+    app.patch('/staff/:id', async(req,res)=>{
+      const id = req.params.id;
+      const {staffStatus,role}= req.query;
+      const query= {_id: new ObjectId(id)}
+      const updateData={
+        $set:{
+          staffStatus:  staffStatus,
+          role: role
+          
+
+        }
+      }
+      const result = await userCollection.updateOne(query, updateData)
+      res.send(result)
+    })
+
 
 
 
