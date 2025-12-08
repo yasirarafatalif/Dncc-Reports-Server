@@ -54,6 +54,29 @@ async function run() {
       res.send(result)
     })
 
+    // citizen to staff api
+
+    app.patch('/apply-staff', async (req,res)=>{
+      const {email,fullName, nid,phone, about, role}= req.body
+      const query={email}
+      if(!email){
+        return res.status(400).send({ success: false, message: "Email is required" });
+      }
+      const updatedata={
+        $set:{
+          staffName: fullName,
+          nidNumber: nid,
+          staffPhoneNUmber:phone,
+          staffStauts:"pending",
+          staffAbout:about,
+          role: role
+        }
+      }
+      const result= await userCollection.updateOne(query,updatedata)
+      
+      res.send(result)
+    })
+
     // issue api here
 
     app.post('/issue', async (req, res) => {
