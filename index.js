@@ -9,6 +9,10 @@ app.use(express.json())
 app.use(cors())
 
 
+// strip
+const stripe = require('stripe')(process.env.STRIPE_KEY);
+const YOUR_DOMAIN = `${process.env.MY_DOMAIN}`;
+
 //mongobd here
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 // const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.zgnatwl.mongodb.net/?appName=Cluster0`;
@@ -70,14 +74,14 @@ async function run() {
     app.get("/users/:email/role", async (req, res) => {
       const email = req.params.email;
 
-  
-        const user = await userCollection.findOne({ email: email });
 
-        if (!user) {
-          return res.send("citizen"); // default role
-        }
+      const user = await userCollection.findOne({ email: email });
 
-        res.send(user.role );
+      if (!user) {
+        return res.send("citizen"); // default role
+      }
+
+      res.send(user.role);
 
     });
 
@@ -135,8 +139,8 @@ async function run() {
           staffEmail: staffEmail,
           staffName: staffName
         }
-        }
-      
+      }
+
       const staffUpdateData = {
         $set: {
           staffStatus: 'in_work'
@@ -176,48 +180,48 @@ async function run() {
       const { status } = req.query;
       const { staffEmail, staffName } = req.body;
       const query = { _id: new ObjectId(id) };
-      
+
       const findIssue = await issueCollection.findOne(query)
       if (!findIssue) {
         return res.status(404).send({ success: false, message: "Issue not found" });
       }
 
-       const timelineMessage = {
-            status: status,
-            message: `Issue status updated to "${status}".`,
-            updatedBy: staffEmail,
-            dateTime: new Date(),
-            
-        };
-     const issueUpdate = {
-            $set: {
-                status: status,
-                trackingId: issueTrackingId,
-                staffName: staffName,
-                staffEmail: staffEmail,
-            },
-            $push: {
-                timeline: timelineMessage,
-            },
-        };
-      if(status ==='closed'){
+      const timelineMessage = {
+        status: status,
+        message: `Issue status updated to "${status}".`,
+        updatedBy: staffEmail,
+        dateTime: new Date(),
 
-        const staffquery ={}
-        
-        if(staffEmail){
+      };
+      const issueUpdate = {
+        $set: {
+          status: status,
+          trackingId: issueTrackingId,
+          staffName: staffName,
+          staffEmail: staffEmail,
+        },
+        $push: {
+          timeline: timelineMessage,
+        },
+      };
+      if (status === 'closed') {
+
+        const staffquery = {}
+
+        if (staffEmail) {
           staffquery.email = staffEmail
         }
-        const staffUpdate ={
-        $set:{
-          staffStatus : 'approved'
+        const staffUpdate = {
+          $set: {
+            staffStatus: 'approved'
 
+          }
         }
-      }
         const result1 = await userCollection.updateOne(staffquery, staffUpdate);
-        
+
 
       }
-     
+
       const result = await issueCollection.updateOne(query, issueUpdate)
 
       res.send(result)
@@ -324,8 +328,78 @@ async function run() {
 
 
 
+    // payment section 
+
+    app.post('/create-checkout-session', async (req, res) => {
+      const paymentInfo = req.body;
+      console.log(paymentInfo);
+      const amount = parseInt(paymentInfo?.cost) * 100
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "BDT",
+              unit_amount: amount,
+              product_data: {
+                name: paymentInfo?.percelName
+              }
+            },
+
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        customer_email: paymentInfo.customer_email,
+        metadata: {
+          percelId: paymentInfo.percelId,
+          percelName: paymentInfo.percelName
+        },
+        success_url: `${process.env.MY_DOMAIN}dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.MY_DOMAIN}dashboard/payment-canceled?session_id={CHECKOUT_SESSION_ID}`,
+
+      })
+      console.log(session.success_url);
+
+      res.send({ url: session.url })
+    })
 
 
+    // verify payment check
+    app.patch('/verify-payment-success', async (req, res) => {
+      const sessionId = req.query.session_id;
+      // console.log(issueTrackingId);
+      const trackingId = generateTrackingId()
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      // console.log(session);
+      const email = session.customer_details.email
+      const transtionId = session.payment_intent;
+      const query = { transtionId: transtionId };
+      const paymentExits = await issueCollection.findOne(query)
+      if (paymentExits) {
+        return res.send({ massege: "alreday payment ", transtionId })
+      }
+      if (session.payment_status == 'paid') {
+        const id = session.metadata.percelId;
+        const query = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            payment_status: 'paid',
+            trackingId: trackingId,
+            amount: session.amount_total / 100,
+            currency: session.currency,
+            percelId: session.metadata.percelId,
+            transtionId: transtionId,
+            trackingId: trackingId,
+            priority:'high',
+            paidEmail : email,
+            payment_status: session.payment_status,
+            paidAt: new Date(),
+          }
+        }
+        const result = await issueCollection.updateOne({ _id: new ObjectId(id) }, update)
+      }
+      res.send({ success: true })
+    })
 
 
     // Send a ping to confirm a successful connection
