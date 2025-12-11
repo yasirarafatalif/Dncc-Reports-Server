@@ -56,6 +56,8 @@ async function run() {
       const user = req.body
       user.role = 'citizen'
       user.status = 'unblock'
+      user.issueCount = 2
+      user.subscription = 'free'
       const email = user.email
       const userExits = await userCollection.findOne({ email })
       if (userExits) {
@@ -73,15 +75,18 @@ async function run() {
     })
     app.get("/users/:email/role", async (req, res) => {
       const email = req.params.email;
-
-
       const user = await userCollection.findOne({ email: email });
-
       if (!user) {
         return res.send("citizen"); // default role
       }
-
       res.send(user.role);
+
+    });
+
+     app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await userCollection.findOne({ email: email });
+      res.send(user);
 
     });
 
@@ -111,11 +116,28 @@ async function run() {
     // issue api here
 
     app.post('/issue', async (req, res) => {
-      const userIssue = req.body
-      userIssue.priority = 'normal'
+      const userIssue = req.body;
+      const query = { email: userIssue.email }
+       userIssue.priority = 'normal'
       userIssue.status = 'pending'
+      const user = await userCollection.findOne(query);
+      if (!user) {
+        return res.status(404).send({ message: "User not found" });
+      }
+
+      if (user.subscription !== "premium" && user.issueCount >= 3) {
+        return res.send({
+          message: "Free users can report only 3 issues. Please upgrade to premium.",
+          subscriptionRequired: true
+        });
+      }
+     
       const result = await issueCollection.insertOne(userIssue)
-      res.send(result)
+      await userCollection.updateOne(
+        query,
+        { $inc: { issueCount: 1 } }
+      );
+        res.send(result);
     })
 
     // issue find api
@@ -150,6 +172,24 @@ async function run() {
       const staffresult = await userCollection.updateOne(riderquery, staffUpdateData)
 
       res.send({ result, staffresult })
+    })
+
+
+    app.patch('/update-issue/:id', async(req,res)=>{
+      const id = req.params.id;
+      const {description, name, email, title,category}= req.body;
+      const updateData={
+        $set:{
+          name: name,
+          email: email,
+          title: title,
+          category: category,
+          description: description
+        }
+      }
+      const query={_id: new ObjectId(id)}
+      const result= await issueCollection.updateOne(query, updateData)
+      res.send(result)
     })
 
 
@@ -358,7 +398,6 @@ async function run() {
         cancel_url: `${process.env.MY_DOMAIN}dashboard/payment-canceled?session_id={CHECKOUT_SESSION_ID}`,
 
       })
-      console.log(session.success_url);
 
       res.send({ url: session.url })
     })
@@ -390,8 +429,8 @@ async function run() {
             percelId: session.metadata.percelId,
             transtionId: transtionId,
             trackingId: trackingId,
-            priority:'high',
-            paidEmail : email,
+            priority: 'high',
+            paidEmail: email,
             payment_status: session.payment_status,
             paidAt: new Date(),
           }
