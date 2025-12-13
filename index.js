@@ -83,12 +83,38 @@ async function run() {
 
     });
 
-     app.get("/users/:email", async (req, res) => {
+    app.get("/users/:email", async (req, res) => {
       const email = req.params.email;
       const user = await userCollection.findOne({ email: email });
       res.send(user);
 
     });
+    // user delete account
+    app.delete("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await userCollection.deleteOne({ email: email });
+      res.send(user);
+
+    });
+
+    // update profile
+    app.patch('/users/:email', async (req, res) => {
+      const email = req.params.email;
+      const { display_name, age, phoneNumber, photoURl, district, nidNumber } = req.body;
+      const updateData = {
+        $set: {
+          display_name: display_name,
+          phoneNumber: phoneNumber,
+          age: age,
+          photoURl: photoURl,
+          district: district,
+          nidNumber: nidNumber
+        }
+      }
+      const query = { email }
+      const result = await userCollection.updateOne(query, updateData)
+      res.send(result)
+    })
 
 
     // citizen to staff api
@@ -118,7 +144,7 @@ async function run() {
     app.post('/issue', async (req, res) => {
       const userIssue = req.body;
       const query = { email: userIssue.email }
-       userIssue.priority = 'normal'
+      userIssue.priority = 'normal'
       userIssue.status = 'pending'
       const user = await userCollection.findOne(query);
       if (!user) {
@@ -131,13 +157,13 @@ async function run() {
           subscriptionRequired: true
         });
       }
-     
+
       const result = await issueCollection.insertOne(userIssue)
       await userCollection.updateOne(
         query,
         { $inc: { issueCount: 1 } }
       );
-        res.send(result);
+      res.send(result);
     })
 
     // issue find api
@@ -175,11 +201,11 @@ async function run() {
     })
 
 
-    app.patch('/update-issue/:id', async(req,res)=>{
+    app.patch('/update-issue/:id', async (req, res) => {
       const id = req.params.id;
-      const {description, name, email, title,category}= req.body;
-      const updateData={
-        $set:{
+      const { description, name, email, title, category } = req.body;
+      const updateData = {
+        $set: {
           name: name,
           email: email,
           title: title,
@@ -187,8 +213,8 @@ async function run() {
           description: description
         }
       }
-      const query={_id: new ObjectId(id)}
-      const result= await issueCollection.updateOne(query, updateData)
+      const query = { _id: new ObjectId(id) }
+      const result = await issueCollection.updateOne(query, updateData)
       res.send(result)
     })
 
@@ -436,9 +462,117 @@ async function run() {
           }
         }
         const result = await issueCollection.updateOne({ _id: new ObjectId(id) }, update)
+        res.send(result)
       }
       res.send({ success: true })
     })
+
+
+
+    // user subcription
+
+    app.post('/create-user-subcription', async (req, res) => {
+      const paymentInfo = req.body;
+      console.log(paymentInfo);
+      const amount = parseInt(paymentInfo?.cost) * 100
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "BDT",
+              unit_amount: amount,
+              product_data: {
+                name: paymentInfo?.Name
+              }
+            },
+
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        customer_email: paymentInfo.customer_email,
+        metadata: {
+          userId: paymentInfo.userId,
+          userName: paymentInfo.Name
+        },
+        success_url: `${process.env.MY_DOMAIN}dashboard/user-subcription-payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.MY_DOMAIN}dashboard/user-subcription-payment-canceled?session_id={CHECKOUT_SESSION_ID}`,
+
+      })
+      console.log(session);
+
+      res.send({ url: session.url })
+
+    })
+
+
+
+    app.patch('/verify-user-payment-success', async (req, res) => {
+      const sessionId = req.query.session_id;
+      // console.log(issueTrackingId);
+      const trackingId = generateTrackingId()
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      // console.log(session);
+      const email = session.customer_details.email
+      const transtionId = session.payment_intent;
+      const query = { transtionId: transtionId };
+      const paymentExits = await issueCollection.findOne(query)
+      if (paymentExits) {
+        return res.send({ massege: "alreday payment ", transtionId })
+      }
+      if (session.payment_status == 'paid') {
+        const id = session.metadata.userId;
+        const query = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            trackingId: trackingId,
+            amount: session.amount_total / 100,
+            currency: session.currency,
+            userId: session.metadata.userId,
+            transtionId: transtionId,
+            trackingId: trackingId,
+            subscription:"premium",
+            paidEmail: email,
+            payment_status: session.payment_status,
+            paidAt: new Date(),
+          }
+        }
+        
+        const result = await userCollection.updateOne(query, update)
+        res.send(result)
+      }
+      res.send({ success: true })
+    })
+
+
+    // user payment verify
+
+
+    // verify-session endpoint 
+    app.get('/verify-session', async (req, res) => {
+      const { session_id } = req.query;
+      if (!session_id) return res.status(400).json({ error: 'Missing session id' });
+
+      try {
+        const session = await stripe.checkout.sessions.retrieve(session_id, {
+          // expand: ['payment_intent'],
+        });
+
+        // session.payment_status typically 'paid' or 'unpaid'
+        // const paid = session.payment_status === 'paid' || (session.payment_intent && session.payment_intent.status === 'succeeded');
+        const paid = session.payment_status === 'paid'
+
+        res.send({
+          paid,
+          session,
+        });
+      } catch (err) {
+
+        res.status(500).send({ error: 'Could not verify session' });
+      }
+    });
+
+
 
 
     // Send a ping to confirm a successful connection
