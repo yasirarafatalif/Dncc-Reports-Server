@@ -392,6 +392,9 @@ async function run() {
 
 
 
+
+
+
     // citizen user api
     //admin show can pending staff api
     app.get('/user/cityzen', async (req, res) => {
@@ -448,6 +451,50 @@ async function run() {
 
 
 
+
+
+    // admin dashboard
+    app.get('/admin-dashboard', async (req, res) => {
+      const totalIssue = await issueCollection.countDocuments();
+      const pendingIssue = await issueCollection.countDocuments({ status: "pending" });
+      const resolvedIssue = await issueCollection.countDocuments({ status: "resolved" });
+      const rejectedIssue = await issueCollection.countDocuments({ status: "rejected" });
+      const totalUsers = await userCollection.countDocuments();
+      const latestPayment = await paymentsCollection.find().sort({ paidAt: -1 }).limit(3).toArray()
+      const latestUsers = await userCollection.find().sort({ createdAt: -1 }).limit(3).toArray()
+      const latestIssue = await issueCollection.find().sort({ submitAt: -1 }).limit(3).toArray();
+      const result = await paymentsCollection.aggregate([
+        { $match: { payment_status: "paid" } },
+        {
+          $group: {
+            _id: null,
+            totalPayment: { $sum: "$amount" }
+          }
+        }
+      ]).toArray();
+
+      const totalPayment = result[0]?.totalPayment || 0;
+      console.log(totalPayment);
+
+      res.send({
+        totalIssue,
+        totalUsers,
+        pendingIssue,
+        resolvedIssue,
+        rejectedIssue,
+        latestPayment,
+        latestUsers,
+        latestIssue,
+        totalPayment
+      });
+
+
+
+    })
+
+
+
+
     // payment section 
 
     app.post('/create-checkout-session', async (req, res) => {
@@ -486,39 +533,71 @@ async function run() {
     // verify payment check
     app.patch('/verify-payment-success', async (req, res) => {
       const sessionId = req.query.session_id;
-      // console.log(issueTrackingId);
       const trackingId = generateTrackingId()
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-      // console.log(session);
+      console.log(session);
+      const userId = session.metadata.userId;
       const email = session.customer_details.email
       const transtionId = session.payment_intent;
-      const query = { transtionId: transtionId };
-      const paymentExits = await issueCollection.findOne(query)
+      const findTranstionIdquery = { transtionId: transtionId };
+      const paymentExits = await issueCollection.findOne(findTranstionIdquery)
       if (paymentExits) {
-        return res.send({ massege: "alreday payment ", transtionId })
+        return res.send({ massege: "alreday payment ", findTranstionIdquery })
       }
-      if (session.payment_status == 'paid') {
-        const id = session.metadata.percelId;
-        const query = { _id: new ObjectId(id) };
-        const update = {
-          $set: {
-            payment_status: 'paid',
-            trackingId: trackingId,
-            amount: session.amount_total / 100,
-            currency: session.currency,
-            percelId: session.metadata.percelId,
-            transtionId: transtionId,
-            trackingId: trackingId,
-            priority: 'high',
-            paidEmail: email,
-            payment_status: session.payment_status,
-            paidAt: new Date(),
-          }
+
+
+      if (session.payment_status !== 'paid') {
+        return res.send({ message: "Payment not completed" });
+      }
+
+      const alreadyPaid = await paymentsCollection.findOne({ transtionId });
+      if (alreadyPaid) {
+        return res.send({ message: "Already payment verified", transtionId });
+      }
+
+      const paidAt = new Date();
+
+      //  INSERT PAYMENT
+      const paymentUpdateData = {
+
+        trackingId,
+        paymentType: "issue-bost",
+        amount: session.amount_total / 100,
+        currency: session.currency,
+        userId,
+        transtionId,
+        product_name: 'user-by-subcriptions',
+        subscription: "premium",
+        paidEmail: email,
+        payment_status: "paid",
+        paidAt,
+        createdAt: paidAt,
+
+      }
+      const payupdateData = await paymentsCollection.insertOne(paymentUpdateData);
+      const id = session.metadata.percelId;
+      const query = { _id: new ObjectId(id) };
+      const update = {
+        $set: {
+          payment_status: 'paid',
+          trackingId: trackingId,
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          percelId: session.metadata.percelId,
+          transtionId: transtionId,
+          trackingId: trackingId,
+          priority: 'high',
+          paidEmail: email,
+          payment_status: session.payment_status,
+          paidAt: new Date(),
         }
-        const result = await issueCollection.updateOne({ _id: new ObjectId(id) }, update)
-        res.send(result)
       }
-      res.send({ success: true })
+      const result = await issueCollection.updateOne({ _id: new ObjectId(id) }, update)
+      res.send({
+        result,
+        payupdateData,
+        message: "Successfully Add"
+      })
     })
 
 
@@ -578,7 +657,6 @@ async function run() {
         const userId = session.metadata.userId;
         const email = session.customer_details.email;
 
-        //  ONLY ONE CHECK (paymentsCollection)
         const alreadyPaid = await paymentsCollection.findOne({ transtionId });
         if (alreadyPaid) {
           return res.send({ message: "Already payment verified", transtionId });
@@ -596,6 +674,7 @@ async function run() {
           currency: session.currency,
           userId,
           transtionId,
+          product_name: 'user-by-subcriptions',
           subscription: "premium",
           paidEmail: email,
           payment_status: "paid",
@@ -641,13 +720,6 @@ async function run() {
     });
 
 
-
-  
-
-
-
-
-
     // verify-session endpoint 
     app.get('/verify-session', async (req, res) => {
       const { session_id } = req.query;
@@ -671,6 +743,15 @@ async function run() {
         res.status(500).send({ error: 'Could not verify session' });
       }
     });
+
+
+
+    // all payments get api
+    app.get("/all-payments", async (req, res) => {
+      const result = await paymentsCollection.find().sort({ paidAt: -1 }).toArray()
+      res.send(result)
+
+    })
 
 
 
