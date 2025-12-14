@@ -40,6 +40,39 @@ function generateTrackingId() {
 // example use
 const issueTrackingId = generateTrackingId();
 
+
+//firebase token
+var admin = require("firebase-admin");
+
+var serviceAccount = require("./dncckey.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
+
+// verifyFirebase Token
+const verifyFbToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  // console.log(token);
+  if (!token) {
+    return res.status(401).send({ message: "Unauthoraize User" })
+  }
+  try {
+    const idToken = token.split(' ')[1];
+    const decode = await admin.auth().verifyIdToken(idToken);
+    // console.log('object', decode);
+    req.decode_email = decode.email;
+    next()
+
+  } catch (error) {
+    return res.status(401).send({ message: "unthorize email" })
+
+  }
+
+}
+
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
@@ -49,6 +82,23 @@ async function run() {
     const db = client.db("Dncc_Reports")
     const userCollection = db.collection('Dncc_User');
     const issueCollection = db.collection('Dncc_All_Issuse');
+    const paymentsCollection = db.collection('Dncc_payments');
+
+
+
+    // verify admin 
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decode_email;
+      const query = { email }
+      const user = await userCollection.findOne(query)
+      if (user?.role !== "admin") {
+        return res.status(403).send('forbiden access')
+
+      }
+      next()
+      // res.send({success:true})
+
+    }
 
 
     // user related api
@@ -56,7 +106,7 @@ async function run() {
       const user = req.body
       user.role = 'citizen'
       user.status = 'unblock'
-      user.issueCount = 2
+      user.issueCount = 0
       user.subscription = 'free'
       const email = user.email
       const userExits = await userCollection.findOne({ email })
@@ -95,7 +145,7 @@ async function run() {
       const user = await userCollection.deleteOne({ email: email });
       res.send(user);
 
-    });
+    })
 
     // update profile
     app.patch('/users/:email', async (req, res) => {
@@ -223,7 +273,11 @@ async function run() {
 
     // all issue api
     app.get('/all-issue', async (req, res) => {
-      const result = await issueCollection.find().toArray();
+      const query = {}
+      if (query) {
+        query.status = { $in: ['pending', 'resolved'] }
+      }
+      const result = await issueCollection.find(query).sort({ paidAt: -1 }).toArray();
       res.send(result)
     });
 
@@ -270,7 +324,7 @@ async function run() {
           timeline: timelineMessage,
         },
       };
-      if (status === 'closed') {
+      if (status === 'resolved') {
 
         const staffquery = {}
 
@@ -341,14 +395,14 @@ async function run() {
     // citizen user api
     //admin show can pending staff api
     app.get('/user/cityzen', async (req, res) => {
-      const { role, staffStatus } = req.query
+      const { role, staffStatus } = req.query;
       const query = {}
       if (role) {
         query.role = role
       }
       if (role === 'citizen') {
         const result = await userCollection.find(query).toArray()
-        res.send(result)
+        return res.send(result)
       }
       if (staffStatus) {
         query.staffStatus = { $in: ['pending', 'approved'] }
@@ -508,44 +562,90 @@ async function run() {
 
 
     app.patch('/verify-user-payment-success', async (req, res) => {
-      const sessionId = req.query.session_id;
-      // console.log(issueTrackingId);
-      const trackingId = generateTrackingId()
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
-      // console.log(session);
-      const email = session.customer_details.email
-      const transtionId = session.payment_intent;
-      const query = { transtionId: transtionId };
-      const paymentExits = await issueCollection.findOne(query)
-      if (paymentExits) {
-        return res.send({ massege: "alreday payment ", transtionId })
-      }
-      if (session.payment_status == 'paid') {
-        const id = session.metadata.userId;
-        const query = { _id: new ObjectId(id) };
-        const update = {
+      try {
+        const sessionId = req.query.session_id;
+        if (!sessionId) {
+          return res.status(400).send({ message: "session_id missing" });
+        }
+
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        if (session.payment_status !== 'paid') {
+          return res.send({ message: "Payment not completed" });
+        }
+
+        const transtionId = session.payment_intent;
+        const userId = session.metadata.userId;
+        const email = session.customer_details.email;
+
+        //  ONLY ONE CHECK (paymentsCollection)
+        const alreadyPaid = await paymentsCollection.findOne({ transtionId });
+        if (alreadyPaid) {
+          return res.send({ message: "Already payment verified", transtionId });
+        }
+
+        const trackingId = generateTrackingId();
+        const paidAt = new Date();
+
+        //  INSERT PAYMENT
+        const paymentUpdateData = {
+
+          trackingId,
+          paymentType: "premium",
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          userId,
+          transtionId,
+          subscription: "premium",
+          paidEmail: email,
+          payment_status: "paid",
+          paidAt,
+          createdAt: paidAt,
+
+        }
+        await paymentsCollection.insertOne(paymentUpdateData);
+
+        //  UPDATE USER
+
+        const userUpdateData = {
           $set: {
             trackingId: trackingId,
             amount: session.amount_total / 100,
             currency: session.currency,
-            userId: session.metadata.userId,
+            // userId: session.metadata.userId,
             transtionId: transtionId,
-            trackingId: trackingId,
-            subscription:"premium",
+            subscription: "premium",
             paidEmail: email,
             payment_status: session.payment_status,
             paidAt: new Date(),
           }
         }
-        
-        const result = await userCollection.updateOne(query, update)
-        res.send(result)
+        await userCollection.updateOne(
+          { _id: new ObjectId(userId) },
+          userUpdateData
+        );
+
+        res.send({
+          success: true,
+          message: "Payment verified successfully",
+          trackingId,
+        });
+
+      } catch (error) {
+        if (error.code === 11000) {
+          return res.send({ message: "Payment already exists" });
+        }
+        console.error(error);
+        res.status(500).send({ message: "Payment verification failed" });
       }
-      res.send({ success: true })
-    })
+    });
 
 
-    // user payment verify
+
+  
+
+
+
 
 
     // verify-session endpoint 
