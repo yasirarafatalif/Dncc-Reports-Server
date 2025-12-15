@@ -474,7 +474,7 @@ async function run() {
       ]).toArray();
 
       const totalPayment = result[0]?.totalPayment || 0;
-      console.log(totalPayment);
+
 
       res.send({
         totalIssue,
@@ -489,6 +489,67 @@ async function run() {
       });
 
 
+
+    })
+
+
+    //citizen dashboard
+    app.get('/citizen-dashboard', async (req, res) => {
+      const email = req.query.email;
+      if (!email) {
+        return res.status(400).send({ message: "Email is required" });
+      }
+      const totalIssues = await issueCollection.countDocuments({ email });
+      const pendingIssues = await issueCollection.countDocuments({
+        email,
+        status: "pending"
+      });
+      const rejectedIssues = await issueCollection.countDocuments({
+        email,
+        status: "rejected"
+      });
+      const resolvedIssues = await issueCollection.countDocuments({
+        email,
+        status: "resolved"
+      });
+      const inProgressIssues = await issueCollection.countDocuments({
+        email,
+        status: { $in: ['assign_staff', 'in-progress', 'working'] }
+      });
+
+      const totalPayments = await paymentsCollection.countDocuments({
+        paidEmail: email
+      });
+
+      const latestPayment = await paymentsCollection.find({paidEmail:email}).sort({ paidAt: -1 }).limit(3).toArray()
+      const latestIssue = await issueCollection.find({email}).sort({ submitAt: -1 }).limit(3).toArray();
+
+      const result = await paymentsCollection.aggregate([
+        { $match: { payment_status: "paid" } },
+        {
+          $group: {
+            _id: null,
+            totalPayment: { $sum: "$amount" }
+          }
+        }
+      ]).toArray();
+
+      const totalPayment = result[0]?.totalPayment || 0;
+
+      res.send({
+
+        totalIssues,
+        pendingIssues,
+        resolvedIssues,
+        totalPayments,
+        totalPayment,
+        rejectedIssues,
+        inProgressIssues,
+        latestPayment,
+        latestIssue
+
+
+      });
 
     })
 
