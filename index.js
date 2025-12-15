@@ -647,6 +647,54 @@ async function run() {
     })
 
 
+    // staff dashboard
+
+    app.get('/staff-dashboard', async (req, res) => {
+      const email = req.query.email;
+      if (!email) {
+        return res.status(400).send({ message: "Email is required" });
+      }
+      const totalAssignedIssues = await issueCollection.countDocuments({ staffEmail: email });
+      const pendingIssues = await issueCollection.countDocuments({
+        staffEmail: email,
+        status: "pending"
+      });
+      const resolvedIssues = await issueCollection.countDocuments({
+        staffEmail: email,
+        status: "resolved"
+      });
+
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+
+      const tasks = await issueCollection.find({
+        "timeline": {
+          $elemMatch: {
+            status: {$in:["assign_staff","in-progress","working","resolved",'pending']},
+            updatedBy: email,
+            dateTime: { $gte: start, $lte: end }
+          }
+        }
+      }).toArray();
+
+      res.send({
+
+        totalAssignedIssues,
+        pendingIssues,
+        resolvedIssues,
+        tasks
+
+
+
+      });
+
+    })
+
+
+
 
 
     // payment section 
@@ -748,7 +796,7 @@ async function run() {
         }
       }
       const result = await issueCollection.updateOne({ _id: new ObjectId(id) }, update)
-  
+
       res.send({
         result,
         payupdateData,
@@ -762,7 +810,6 @@ async function run() {
 
     app.post('/create-user-subcription', async (req, res) => {
       const paymentInfo = req.body;
-      console.log(paymentInfo);
       const amount = parseInt(paymentInfo?.cost) * 100
       const session = await stripe.checkout.sessions.create({
         line_items: [
@@ -771,7 +818,7 @@ async function run() {
               currency: "BDT",
               unit_amount: amount,
               product_data: {
-                name: paymentInfo?.Name
+                name: paymentInfo?.percelName
               }
             },
 
@@ -782,13 +829,14 @@ async function run() {
         customer_email: paymentInfo.customer_email,
         metadata: {
           userId: paymentInfo.userId,
-          userName: paymentInfo.Name
+          coustomerName: paymentInfo.Name,
+          percelName: paymentInfo.percelName
         },
         success_url: `${process.env.MY_DOMAIN}dashboard/user-subcription-payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.MY_DOMAIN}dashboard/user-subcription-payment-canceled?session_id={CHECKOUT_SESSION_ID}`,
 
       })
-      console.log(session);
+
 
       res.send({ url: session.url })
 
@@ -878,50 +926,49 @@ async function run() {
 
     // verify-session endpoint 
 
-app.get('/verify-session', async (req, res) => {
-  const { session_id } = req.query;
-  if (!session_id) {
-    return res.status(400).json({ error: 'Missing session id' });
-  }
+    app.get('/verify-session', async (req, res) => {
+      const { session_id } = req.query;
+      if (!session_id) {
+        return res.status(400).json({ error: 'Missing session id' });
+      }
 
-  try {
-    const session = await stripe.checkout.sessions.retrieve(session_id, {
-      expand: ['payment_intent.charges.data'],
+      try {
+        const session = await stripe.checkout.sessions.retrieve(session_id, {
+          expand: ['payment_intent.charges.data'],
+        });
+
+        const paid = session.payment_status === 'paid';
+
+        const userInfo = {
+          email: session.customer_email,
+          name: session.metadata?.coustomerName || null,
+          phone: session.customer_details?.phone || null,
+        };
+
+        const paymentInfo = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          status: session.payment_status,
+          transactionId: session.payment_intent?.id,
+          createdAt: new Date(session.created * 1000),
+          percelName: session.metadata?.percelName
+        };
+
+
+
+        res.send({
+          success: true,
+          paid,
+          session,
+          userInfo,
+          paymentInfo,
+          sessionId: session.id,
+        });
+
+      } catch (error) {
+        res.status(500).send({ error: 'Could not verify session' });
+      }
     });
-
-    const paid = session.payment_status === 'paid';
-
-    const userInfo = {
-      email: session.customer_email,
-      name: session.metadata?.coustomerName || null,
-      phone: session.customer_details?.phone || null,
-    };
-
-    const paymentInfo = {
-      amount: session.amount_total / 100,
-      currency: session.currency,
-      status: session.payment_status,
-      transactionId: session.payment_intent?.id,
-      createdAt: new Date(session.created * 1000),
-      percelName: session.metadata?.percelName
-    };
-
-  
-
-    res.send({
-      success: true,
-      paid,
-      session,
-      userInfo,
-      paymentInfo,
-      sessionId: session.id,
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).send({ error: 'Could not verify session' });
-  }
-});
 
 
 
@@ -939,7 +986,7 @@ app.get('/verify-session', async (req, res) => {
 
 
     //     const paid = session.payment_status === 'paid'
-        
+
 
     //     res.send({
     //       paid,
