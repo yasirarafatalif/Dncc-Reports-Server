@@ -50,6 +50,8 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
+module.exports = admin;
+
 
 
 // verifyFirebase Token
@@ -96,9 +98,100 @@ async function run() {
 
       }
       next()
-      // res.send({success:true})
+
 
     }
+
+
+
+    // admin crete user 
+
+
+    app.post("/create-staff", verifyFbToken, verifyAdmin, async (req, res) => {
+      const { name, email, password, phone, photo } = req.body;
+      try {
+        //  Create Firebase Auth user
+        const userRecord = await admin.auth().createUser({
+          email,
+          password,
+          displayName: name,
+          photoURL: photo
+        });
+
+        //  Save staff in DB
+        const staff = {
+          uid: userRecord.uid,
+          display_name: name,
+          email,
+          phoneNumber: phone,
+          role: "Field Staff",
+          status: "approved",
+          staffStatus: 'approved',
+          createdAt: new Date(),
+          photoURL: photo
+        };
+
+        await userCollection.insertOne(staff);
+
+        res.send({ success: true, message: "Staff created successfully" });
+
+      } catch (error) {
+        res.status(400).send({ success: false, message: error.message });
+      }
+
+
+    });
+
+
+    // admin update staff data
+    app.patch("/update-staff/:id", verifyFbToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const { name, phone, photo, status } = req.body;
+      const updateData = {
+
+        $set: {
+
+          display_name: name,
+          phoneNumber: phone,
+          photoURL: photo,
+          status,
+          updatedAt: new Date(),
+        },
+
+
+      }
+
+
+      const result = await userCollection.updateOne(
+        { _id: new ObjectId(id) }, updateData);
+
+      res.send({ success: true });
+
+    });
+
+    // delete admin staff data
+    app.delete("/delete-staff/:id", verifyFbToken,verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+
+      const staff = await userCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!staff) {
+        return res.status(404).send({ success: false, message: "Staff not found" });
+      }
+
+
+      await admin.auth().deleteUser(staff.uid);
+
+      await userCollection.deleteOne({ _id: new ObjectId(id) });
+
+      res.send({ success: true });
+    });
+
+
+
+
 
 
     // user related api
@@ -521,8 +614,8 @@ async function run() {
         paidEmail: email
       });
 
-      const latestPayment = await paymentsCollection.find({paidEmail:email}).sort({ paidAt: -1 }).limit(3).toArray()
-      const latestIssue = await issueCollection.find({email}).sort({ submitAt: -1 }).limit(3).toArray();
+      const latestPayment = await paymentsCollection.find({ paidEmail: email }).sort({ paidAt: -1 }).limit(3).toArray()
+      const latestIssue = await issueCollection.find({ email }).sort({ submitAt: -1 }).limit(3).toArray();
 
       const result = await paymentsCollection.aggregate([
         { $match: { payment_status: "paid" } },
