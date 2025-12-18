@@ -57,14 +57,12 @@ module.exports = admin;
 // verifyFirebase Token
 const verifyFbToken = async (req, res, next) => {
   const token = req.headers.authorization;
-  // console.log(token);
   if (!token) {
     return res.status(401).send({ message: "Unauthoraize User" })
   }
   try {
     const idToken = token.split(' ')[1];
     const decode = await admin.auth().verifyIdToken(idToken);
-    // console.log('object', decode);
     req.decode_email = decode.email;
     next()
 
@@ -108,6 +106,19 @@ async function run() {
       const query = { email }
       const user = await userCollection.findOne(query)
       if (user?.role !== "citizen") {
+        return res.status(403).send('forbiden access')
+
+      }
+      next()
+
+
+    }
+      // verify staff
+    const verifyStaff = async (req, res, next) => {
+      const email = req.decode_email;
+      const query = { email }
+      const user = await userCollection.findOne(query)
+      if (user?.role !== "Field Staff") {
         return res.status(403).send('forbiden access')
 
       }
@@ -246,28 +257,28 @@ async function run() {
 
 
     //user get related api
-    app.get('/users', async (req, res) => {
+    app.get('/users',verifyFbToken, async (req, res) => {
       const result = await userCollection.find().toArray()
       res.send(result)
     })
-    app.get("/users/:email/role", async (req, res) => {
+    app.get("/users/:email/role",verifyFbToken, async (req, res) => {
       const email = req.params.email;
       const user = await userCollection.findOne({ email: email });
       if (!user) {
-        return res.send("citizen"); // default role
+        return res.send("citizen");
       }
       res.send(user.role);
 
     });
 
-    app.get("/users/:email", async (req, res) => {
+    app.get("/users/:email",verifyFbToken, async (req, res) => {
       const email = req.params.email;
       const user = await userCollection.findOne({ email: email });
       res.send(user);
 
     });
     // user delete account
-    app.delete("/users/:email", async (req, res) => {
+    app.delete("/users/:email",verifyFbToken, async (req, res) => {
       const email = req.params.email;
       const user = await userCollection.deleteOne({ email: email });
       res.send(user);
@@ -275,7 +286,7 @@ async function run() {
     })
 
     // update profile
-    app.patch('/users/:email', async (req, res) => {
+    app.patch('/users/:email',verifyFbToken, async (req, res) => {
       const email = req.params.email;
       const { display_name, age, phoneNumber, photoURl, district, nidNumber } = req.body;
       const updateData = {
@@ -296,29 +307,29 @@ async function run() {
 
     // citizen to staff api
 
-    app.patch('/apply-staff', async (req, res) => {
-      const { email, fullName, nid, phone, about, role } = req.body
-      const query = { email }
-      if (!email) {
-        return res.status(400).send({ success: false, message: "Email is required" });
-      }
-      const updatedata = {
-        $set: {
-          staffName: fullName,
-          nidNumber: nid,
-          staffPhoneNUmber: phone,
-          staffStatus: "pending",
-          staffAbout: about,
-        }
-      }
-      const result = await userCollection.updateOne(query, updatedata)
+    // app.patch('/apply-staff', async (req, res) => {
+    //   const { email, fullName, nid, phone, about, role } = req.body
+    //   const query = { email }
+    //   if (!email) {
+    //     return res.status(400).send({ success: false, message: "Email is required" });
+    //   }
+    //   const updatedata = {
+    //     $set: {
+    //       staffName: fullName,
+    //       nidNumber: nid,
+    //       staffPhoneNUmber: phone,
+    //       staffStatus: "pending",
+    //       staffAbout: about,
+    //     }
+    //   }
+    //   const result = await userCollection.updateOne(query, updatedata)
 
-      res.send(result)
-    })
+    //   res.send(result)
+    // })
 
     // issue api here
 
-    app.post('/issue', async (req, res) => {
+    app.post('/issue',verifyFbToken,verifyCitizen, async (req, res) => {
       const userIssue = req.body;
       const query = { email: userIssue.email }
       userIssue.priority = 'normal'
@@ -344,7 +355,7 @@ async function run() {
     })
 
     // issue find api
-    app.get('/issue/:id', async (req, res) => {
+    app.get('/issue/:id',verifyFbToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) }
       const result = await issueCollection.findOne(query)
@@ -352,7 +363,7 @@ async function run() {
     })
 
     // issue assigned staff update api
-    app.patch("/issue/:id", async (req, res) => {
+    app.patch("/issue/:id",verifyFbToken, async (req, res) => {
       const id = req.params.id;
       const { staffName, staffEmail, phoneNumber, staffId } = req.body;
       const query = { _id: new ObjectId(id) }
@@ -378,7 +389,7 @@ async function run() {
     })
 
 
-    app.patch('/update-issue/:id', async (req, res) => {
+    app.patch('/update-issue/:id', verifyFbToken,async (req, res) => {
       const id = req.params.id;
       const { description, name, email, title, category } = req.body;
       const updateData = {
@@ -396,7 +407,7 @@ async function run() {
     })
 
 
-    app.patch('/issue/:id/status', async(req,res)=>{
+    app.patch('/issue/:id/status', verifyFbToken, async(req,res)=>{
       const {status} = req.query
       const id = req.params.id
       const query={_id: new ObjectId(id)}
@@ -439,7 +450,7 @@ app.get('/all-issues', async (req, res) => {
 
 
     // all issue api
-    app.get('/all-issue', async (req, res) => {
+    app.get('/all-issue',verifyFbToken,verifyAdmin, async (req, res) => {
       const query = {}
       if (query) {
         query.status = { $in: ['pending'] }
@@ -448,7 +459,7 @@ app.get('/all-issues', async (req, res) => {
       res.send(result)
     });
     // all resolved issue api
-    app.get('/all-resoved-issue', async (req, res) => {
+    app.get('/all-resoved-issue',verifyFbToken,verifyAdmin, async (req, res) => {
       const query = {}
       if (query) {
         query.status = { $in: ['resolved'] }
@@ -457,22 +468,49 @@ app.get('/all-issues', async (req, res) => {
       // const result = await issueCollection.find(query).sort({ paidAt: -1 }).toArray();
       res.send(result)
     });
+    // all rejected issue api
+    app.get('/all-rejected-issue',verifyFbToken,verifyAdmin, async (req, res) => {
+      const query = {}
+      if (query) {
+        query.status = { $in: ['rejected'] }
+      }
+      const result = await issueCollection.find(query).toArray();
+      // const result = await issueCollection.find(query).sort({ paidAt: -1 }).toArray();
+      res.send(result)
+    });
 
     // all issue api
-    app.get('/all-issue/email', async (req, res) => {
+    app.get('/all-issue/email',verifyFbToken, async (req, res) => {
       const { userEmail } = req.query;
+      const query = {}
+  
+      if (userEmail) {
+        query.staffEmail = userEmail
+      }
+   query.status = { $nin: ["resolved"] };
+
+
+      const result = await issueCollection.find(query).toArray();
+      res.send(result)
+    });
+
+    // staff resloved issue
+    app.get('/resloved-issue/email', verifyFbToken,verifyStaff, async (req, res) => {
+      const { userEmail,status } = req.query;
       const query = {}
       if (userEmail) {
         query.staffEmail = userEmail
       }
-      // console.log(issueTrackingId);
+     query.status = { $in: ["resolved"] };
+  
+
       const result = await issueCollection.find(query).toArray();
       res.send(result)
     });
 
 
     // staff accepet probelm 
-    app.patch('/all-issue/:id', async (req, res) => {
+    app.patch('/all-issue/:id',verifyFbToken,verifyStaff, async (req, res) => {
       const id = req.params.id;
       const { status } = req.query;
       const { staffEmail, staffName } = req.body;
@@ -526,7 +564,7 @@ app.get('/all-issues', async (req, res) => {
 
 
     // user all user find
-    app.get('/user/issue', async (req, res) => {
+    app.get('/user/issue',verifyFbToken,verifyCitizen, async (req, res) => {
       const { email } = req.query;
       const query = { email }
       const result = await issueCollection.find(query).toArray()
@@ -534,7 +572,7 @@ app.get('/all-issues', async (req, res) => {
     })
 
     // user delete find
-    app.delete('/user/issue/:id', async (req, res) => {
+    app.delete('/user/issue/:id',verifyFbToken, async (req, res) => {
       const id = req.params.id;
       const userEmail = req.query.email;
       const query = { _id: new ObjectId(id) };
@@ -574,7 +612,7 @@ app.get('/all-issues', async (req, res) => {
 
     // citizen user api
     //admin show can pending staff api
-    app.get('/user/cityzen', async (req, res) => {
+    app.get('/user/cityzen',verifyFbToken,verifyAdmin, async (req, res) => {
       const { role, staffStatus } = req.query;
       const query = {}
       if (role) {
@@ -593,7 +631,7 @@ app.get('/all-issues', async (req, res) => {
     })
 
     // citizen status update api
-    app.patch('/user/:id', async (req, res) => {
+    app.patch('/user/:id',verifyFbToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
       const query = { _id: new ObjectId(id) }
@@ -609,7 +647,7 @@ app.get('/all-issues', async (req, res) => {
 
 
     //
-    app.patch('/staff/:id', async (req, res) => {
+    app.patch('/staff/:id', verifyFbToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const { staffStatus, role } = req.query;
       const query = { _id: new ObjectId(id) }
@@ -617,8 +655,6 @@ app.get('/all-issues', async (req, res) => {
         $set: {
           staffStatus: staffStatus,
           role: role
-
-
         }
       }
       const result = await userCollection.updateOne(query, updateData)
@@ -631,7 +667,7 @@ app.get('/all-issues', async (req, res) => {
 
 
     // admin dashboard
-    app.get('/admin-dashboard', async (req, res) => {
+    app.get('/admin-dashboard', verifyFbToken,verifyAdmin, async (req, res) => {
       const totalIssue = await issueCollection.countDocuments();
       const pendingIssue = await issueCollection.countDocuments({ status: "pending" });
       const resolvedIssue = await issueCollection.countDocuments({ status: "resolved" });
@@ -671,7 +707,7 @@ app.get('/all-issues', async (req, res) => {
 
 
     //citizen dashboard
-    app.get('/citizen-dashboard', async (req, res) => {
+    app.get('/citizen-dashboard', verifyFbToken,verifyCitizen, async (req, res) => {
       const email = req.query.email;
       if (!email) {
         return res.status(400).send({ message: "Email is required" });
@@ -733,7 +769,7 @@ app.get('/all-issues', async (req, res) => {
 
     // staff dashboard
 
-    app.get('/staff-dashboard', async (req, res) => {
+    app.get('/staff-dashboard',verifyFbToken,verifyStaff, async (req, res) => {
       const email = req.query.email;
       if (!email) {
         return res.status(400).send({ message: "Email is required" });
@@ -783,7 +819,7 @@ app.get('/all-issues', async (req, res) => {
 
     // payment section 
 
-    app.post('/create-checkout-session', async (req, res) => {
+    app.post('/create-checkout-session',verifyFbToken,verifyCitizen, async (req, res) => {
       const paymentInfo = req.body;
       const amount = parseInt(paymentInfo?.cost) * 100
       const session = await stripe.checkout.sessions.create({
@@ -818,11 +854,10 @@ app.get('/all-issues', async (req, res) => {
 
 
     // verify payment check
-    app.patch('/verify-payment-success', async (req, res) => {
+    app.patch('/verify-payment-success',verifyFbToken,verifyCitizen, async (req, res) => {
       const sessionId = req.query.session_id;
       const trackingId = generateTrackingId()
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-      console.log(session);
       const userId = session.metadata.userId;
       const email = session.customer_details.email
       const transtionId = session.payment_intent;
@@ -892,7 +927,7 @@ app.get('/all-issues', async (req, res) => {
 
     // user subcription
 
-    app.post('/create-user-subcription', async (req, res) => {
+    app.post('/create-user-subcription',verifyFbToken,verifyCitizen, async (req, res) => {
       const paymentInfo = req.body;
       const amount = parseInt(paymentInfo?.cost) * 100
       const session = await stripe.checkout.sessions.create({
@@ -928,7 +963,7 @@ app.get('/all-issues', async (req, res) => {
 
 
 
-    app.patch('/verify-user-payment-success', async (req, res) => {
+    app.patch('/verify-user-payment-success',verifyFbToken,verifyCitizen, async (req, res) => {
       try {
         const sessionId = req.query.session_id;
         if (!sessionId) {
@@ -1010,7 +1045,7 @@ app.get('/all-issues', async (req, res) => {
 
     // verify-session endpoint 
 
-    app.get('/verify-session', async (req, res) => {
+    app.get('/verify-session',verifyFbToken,verifyCitizen, async (req, res) => {
       const { session_id } = req.query;
       if (!session_id) {
         return res.status(400).json({ error: 'Missing session id' });
@@ -1059,35 +1094,22 @@ app.get('/all-issues', async (req, res) => {
 
 
 
-    // app.get('/verify-session', async (req, res) => {
-    //   const { session_id } = req.query;
-    //   if (!session_id) return res.status(400).json({ error: 'Missing session id' });
-
-    //   try {
-    //     const session = await stripe.checkout.sessions.retrieve(session_id, {
-    //       expand: ['payment_intent'],
-    //     });
-
-
-    //     const paid = session.payment_status === 'paid'
-
-
-    //     res.send({
-    //       paid,
-    //       session,
-    //     });
-    //   } catch (err) {
-
-    //     res.status(500).send({ error: 'Could not verify session' });
-    //   }
-    // });
 
 
 
     // all payments get api
-    app.get("/all-payments", async (req, res) => {
+    app.get("/all-payments",verifyFbToken,verifyAdmin, async (req, res) => {
       const result = await paymentsCollection.find().sort({ paidAt: -1 }).toArray()
       res.send(result)
+
+    })
+    // all payments get api
+    app.get("/payments/:email",verifyFbToken, verifyCitizen, async (req, res) => {
+      const {userEmail}= req.query;
+      const query={paidEmail: userEmail}
+      const result = await paymentsCollection.find(query).toArray()
+      res.send(result)
+    
 
     })
 
@@ -1095,8 +1117,8 @@ app.get('/all-issues', async (req, res) => {
 
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.db("admin").command({ ping: 1 });
+    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
