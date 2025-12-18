@@ -102,6 +102,40 @@ async function run() {
 
     }
 
+      // verify citizen 
+    const verifyCitizen = async (req, res, next) => {
+      const email = req.decode_email;
+      const query = { email }
+      const user = await userCollection.findOne(query)
+      if (user?.role !== "citizen") {
+        return res.status(403).send('forbiden access')
+
+      }
+      next()
+
+
+    }
+
+
+
+
+
+    //latest reslove  issue
+    app.get('/latest-issue', async (req, res) => {
+      const result = await issueCollection
+        .find({
+          timeline: {
+            $elemMatch: { status: "resolved" }
+          }
+        })
+        .sort({ "timeline.dateTime": -1 }) 
+        .limit(6)
+        .toArray();
+
+      res.send(result);
+    });
+
+
 
 
     // admin crete user 
@@ -362,15 +396,65 @@ async function run() {
     })
 
 
+    app.patch('/issue/:id/status', async(req,res)=>{
+      const {status} = req.query
+      const id = req.params.id
+      const query={_id: new ObjectId(id)}
+      const findIssue = await issueCollection.findOne(query)
+      const updateData ={
+        $set:{
+          status : status
+        }
+      }
+      const result = await issueCollection.updateOne(query, updateData)
+      
+      res.send(result)
+    })
+
+
+
+app.get('/all-issues', async (req, res) => {
+  const page = parseInt(req.query.page) || 1;  
+  const limit = parseInt(req.query.limit) || 5;
+
+  const skip = (page - 1) * limit;
+
+  const totalIssues = await issueCollection.countDocuments();
+
+  const issues = await issueCollection
+    .find()
+    .skip(skip)
+    .limit(limit)
+    .toArray();
+
+  res.send({
+    totalIssues,
+    totalPages: Math.ceil(totalIssues / limit),
+    currentPage: page,
+    issues
+  });
+});
+
+
 
 
     // all issue api
     app.get('/all-issue', async (req, res) => {
       const query = {}
       if (query) {
-        query.status = { $in: ['pending', 'resolved'] }
+        query.status = { $in: ['pending'] }
       }
       const result = await issueCollection.find(query).sort({ paidAt: -1 }).toArray();
+      res.send(result)
+    });
+    // all resolved issue api
+    app.get('/all-resoved-issue', async (req, res) => {
+      const query = {}
+      if (query) {
+        query.status = { $in: ['resolved'] }
+      }
+      const result = await issueCollection.find(query).toArray();
+      // const result = await issueCollection.find(query).sort({ paidAt: -1 }).toArray();
       res.send(result)
     });
 
@@ -673,7 +757,7 @@ async function run() {
       const tasks = await issueCollection.find({
         "timeline": {
           $elemMatch: {
-            status: {$in:["assign_staff","in-progress","working","resolved",'pending']},
+            status: { $in: ["assign_staff", "in-progress", "working", "resolved", 'pending'] },
             updatedBy: email,
             dateTime: { $gte: start, $lte: end }
           }
