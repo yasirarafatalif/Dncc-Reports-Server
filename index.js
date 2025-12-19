@@ -8,6 +8,17 @@ require('dotenv').config()
 app.use(express.json())
 app.use(cors())
 
+const admin = require("firebase-admin");
+
+
+const decoded = Buffer.from(process.env.FB_Token, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+
 
 // strip
 const stripe = require('stripe')(process.env.STRIPE_KEY);
@@ -28,6 +39,8 @@ const client = new MongoClient(uri, {
 
 
 
+
+
 //traking id function
 
 function generateTrackingId() {
@@ -39,18 +52,42 @@ function generateTrackingId() {
 
 // example use
 const issueTrackingId = generateTrackingId();
+// var admin = require("firebase-admin");
+
+// try {
+  // const decoded = Buffer.from(process.env.FB_Token, "base64").toString("utf8");
+  // const serviceAccount = JSON.parse(decoded);
+  
+
+  // admin.initializeApp({
+  //   credential: admin.credential.cert(serviceAccount),
+  // });
+
+  // console.log("Firebase admin initialized");
+// } catch (error) {
+//   console.error("Firebase init error:", error.message);
+// }
 
 
-//firebase token
-var admin = require("firebase-admin");
 
-var serviceAccount = require("./dncckey.json");
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
 
-module.exports = admin;
+
+
+// //firebase token
+// var admin = require("firebase-admin");
+// module.exports = app;
+
+
+// // var serviceAccount = require("./dncckey.json");
+// const decoded = Buffer.from(process.env.FB_Token, 'base64').toString('utf8')
+// const serviceAccount = JSON.parse(decoded);
+
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount)
+// });
+
+// module.exports = admin;
 
 
 
@@ -60,23 +97,25 @@ const verifyFbToken = async (req, res, next) => {
   if (!token) {
     return res.status(401).send({ message: "Unauthoraize User" })
   }
-  try {
+  // try {
     const idToken = token.split(' ')[1];
     const decode = await admin.auth().verifyIdToken(idToken);
+  
     req.decode_email = decode.email;
     next()
 
-  } catch (error) {
-    return res.status(401).send({ message: "unthorize email" })
+  // }
+  //  catch (error) {
+  //   return res.status(401).send({ message: "unthorize email" })
 
-  }
+  // }
 
 }
 
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     // here you type code 
     const db = client.db("Dncc_Reports")
@@ -736,9 +775,11 @@ app.get('/all-issues', async (req, res) => {
 
       const latestPayment = await paymentsCollection.find({ paidEmail: email }).sort({ paidAt: -1 }).limit(3).toArray()
       const latestIssue = await issueCollection.find({ email }).sort({ submitAt: -1 }).limit(3).toArray();
+    
+      
 
       const result = await paymentsCollection.aggregate([
-        { $match: { payment_status: "paid" } },
+        { $match: { payment_status: "paid", paidEmail: email } },
         {
           $group: {
             _id: null,
@@ -1130,6 +1171,7 @@ run().catch(console.dir);
 app.get('/', (req, res) => {
   res.send('Hello World!')
 })
+
 
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
