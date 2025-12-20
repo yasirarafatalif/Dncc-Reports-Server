@@ -1022,7 +1022,7 @@ app.patch("/likes/:id", async (req, res) => {
           percelName: paymentInfo.percelName
         },
         success_url: `${process.env.MY_DOMAIN}dashboard/user-subcription-payment-success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.MY_DOMAIN}dashboard/user-subcription-payment-canceled?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.MY_DOMAIN}dashboard/payment-canceled?session_id={CHECKOUT_SESSION_ID}`,
 
       })
 
