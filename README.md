@@ -6,25 +6,25 @@ It provides RESTful APIs for managing issues, users, roles, payments, upvotes, t
 ---
 
 ## 🌐 Live Server URL
-https://your-server-link.vercel.app
+[https://nagorikserver.vercel.ap](https://nagorikserver.vercel.app/)
 
 ---
 
 ## 🔐 Admin Credentials (Demo)
-- **Email:** admin@gmail.com  
-- **Password:** Admin@123  
+- **Email:** testadmin@gmail.com  
+- **Password:** 123123  
 
 ---
 
 ## 👤 Demo User Credentials
 
 ### Citizen
-- **Email:** citizen@gmail.com  
-- **Password:** Citizen@123  
+- **Email:** testuser1@gmail.com
+- **Password:** 123123
 
 ### Staff
-- **Email:** staff@gmail.com  
-- **Password:** Staff@123  
+- **Email:** staff1@gmail.com  
+- **Password:** 123123  
 
 ---
 
