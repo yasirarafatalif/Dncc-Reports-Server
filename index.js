@@ -485,6 +485,35 @@ app.get('/all-issues', async (req, res) => {
   });
 });
 
+app.patch("/likes/:id", async (req, res) => {
+  const id = req.params.id;
+  const { likeEmail } = req.body;
+
+
+  const issue = await issueCollection.findOne({
+    _id: new ObjectId(id)
+  });
+
+  
+  if (issue.likedBy?.includes(likeEmail)) {
+    return res.send({ message: "Already liked" });
+  }
+
+
+  const result = await issueCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $inc: { likesCount: 1 },
+      $push: { likedBy: likeEmail }
+    }
+  );
+
+  res.send({ message: "Like added", result });
+});
+
+
+
+
 
 
 
