@@ -7,7 +7,7 @@ It provides RESTful APIs for managing issues, users, roles, payments, upvotes, t
 
 ## 🌐 Live Server URL
 [https://nagorikserver.vercel.ap](https://nagorikserver.vercel.app/)
-
+and
 ---
 
 ## 🔐 Admin Credentials (Demo)
